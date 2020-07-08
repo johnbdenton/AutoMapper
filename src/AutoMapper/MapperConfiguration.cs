@@ -18,7 +18,6 @@ namespace AutoMapper
 
     public class MapperConfiguration : IConfigurationProvider
     {
-        private static readonly Type[] ExcludedTypes = { typeof(object), typeof(ValueType), typeof(Enum) };
         private static readonly ConstructorInfo ExceptionConstructor = typeof(AutoMapperMappingException).GetDeclaredConstructors().Single(c => c.GetParameters().Length == 3);
 
         private readonly IEnumerable<IObjectMapper> _mappers;
@@ -138,8 +137,7 @@ namespace AutoMapper
             var requestedDestinationType = mapRequest.RequestedTypes.DestinationType;
             var source = Parameter(mapRequest.RequestedTypes.SourceType, "source");
             var destination = Parameter(requestedDestinationType, "typeMapDestination");
-            var checkNullValueTypeDest = 
-                !requestedDestinationType.IsValueType && mapDestinationType.IsValueType ? Coalesce(destination, New(mapDestinationType)) : (Expression)destination;
+            var checkNullValueTypeDest = CheckNullValueType(destination, mapDestinationType);
             var context = typeMap.MapExpression.Parameters.Last();
             return
                 Lambda(
@@ -148,11 +146,11 @@ namespace AutoMapper
                         requestedDestinationType), 
                 source, destination, context);
         }
-
+        private static Expression CheckNullValueType(Expression expression, Type runtimeType) =>
+            !expression.Type.IsValueType && runtimeType.IsValueType ? Coalesce(expression, New(runtimeType)) : expression;
         private LambdaExpression GenerateObjectMapperExpression(MapRequest mapRequest, IObjectMapper mapperToUse)
         {
             var destinationType = mapRequest.RequestedTypes.DestinationType;
-
             var source = Parameter(mapRequest.RequestedTypes.SourceType, "source");
             var destination = Parameter(destinationType, "mapperDestination");
             var context = Parameter(typeof(ResolutionContext), "context");
@@ -164,9 +162,11 @@ namespace AutoMapper
             }
             else
             {
+                var runtimeDestinationType = mapRequest.RuntimeTypes.DestinationType;
+                var checkNullValueTypeDest = CheckNullValueType(destination, runtimeDestinationType);
                 var map = mapperToUse.MapExpression(this, Configuration, mapRequest.MemberMap, 
                                                                         ToType(source, mapRequest.RuntimeTypes.SourceType), 
-                                                                        ToType(destination, mapRequest.RuntimeTypes.DestinationType), 
+                                                                        ToType(checkNullValueTypeDest, runtimeDestinationType), 
                                                                         context);
                 var exception = Parameter(typeof(Exception), "ex");
                 fullExpression =
